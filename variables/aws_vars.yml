@@ -1,0 +1,40 @@
+# Specify AWS CLI Profile to be Used
+aws_profile: default
+
+# Ansible Paths
+# Config Directory -
+ans_conf_dir: /etc/ansible/
+# Path to ansible Inventory
+ans_inv_path: /etc/ansible/hosts.txt
+
+# Your Public IP
+# This Public IP is allowed through Security Group of Jenkins Server
+# So that Jenkins Can be accessible
+#
+# If not specified, then by default 0.0.0.0/0 will be allowed
+# That is Jenkins Server is vulnerable as it is publically open
+pub_ip: "0.0.0.0/0"
+
+# Specify AWS Subnets
+# For Jenkins Server -
+jen_subnet_id: "subnet-id1"
+# For EKS Cluster (Two Different) -
+eks_subnet1_id: "{{ jen_subnet_id }}"
+eks_subnet2_id: "subnet-id2"
+
+# Specify AMI ID for Jenkins 
+# Recommended To use RedHat Linux
+ami_id: ami-redhatamiidhere
+
+# Specify Instance Types
+# For Jenkins Server-
+jen_inst_type: m5.large
+# For EKS Node Groups -
+ng_inst_type1: m5.large
+ng_inst_type2: m5.xlarge
+
+# JenJobs Role Path
+# By default AWS, Jenkins and JenJobs Roles are in same folder where Playbook Is!
+# But if you put JenJobs role somewhere else
+# Then you have to specify path here
+jenkins_role_path: roles/

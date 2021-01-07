@@ -1,0 +1,6 @@
+# Default Jenkins Installation Path
+jenkins_path: /var/lib/jenkins/
+
+# Default Ansible Path for Collections and Roles
+ans_path: /root/.ansible/
+

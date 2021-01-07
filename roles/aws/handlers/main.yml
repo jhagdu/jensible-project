@@ -1,0 +1,11 @@
+- name: Save Jenkins Key PEM File
+  copy:
+    content: "{{ jenkp.key.private_key }}"
+    dest: "{{ ans_conf_dir }}{{ jen_key }}.pem"
+    mode: '0400'
+
+- name: Save NG Key PEM File
+  copy:
+    content: "{{ jenkp.key.private_key }}"
+    dest: "{{ ans_conf_dir }}{{ ng_key }}.pem"
+    mode: '0400'

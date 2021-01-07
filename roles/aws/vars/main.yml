@@ -1,0 +1,20 @@
+# Key Pair Name
+# For Jenkins Server -
+jen_key: jenkey
+# For EKS Node Groups -
+ng_key: ngkey
+
+# Security Group Names
+# For Jenkins Server -
+jen_sg_name: JenSG
+# For EKS Node Groups -
+ng_sg_name: ngSG
+
+# EKS Cluster Config
+eks_cluster_name: web_cluster
+k8s_version: 1.18
+
+# EKS Node Group Scaling Config
+desired_size: 1
+max_size: 2
+min_size: 1

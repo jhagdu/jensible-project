@@ -1,0 +1,185 @@
+- hosts: localhost
+  gather_facts: false
+  vars: 
+    type: "{{ type }}"
+    namespace: "webspace"
+
+  tasks:
+  - name: Create a k8s namespace
+    community.kubernetes.k8s:
+      name: "webspace"
+      api_version: v1
+      kind: Namespace
+      state: present
+      wait: yes
+
+  - name: Create PVC
+    community.kubernetes.k8s:
+      state: present
+      wait: yes
+      definition:
+        apiVersion: v1
+        kind: PersistentVolumeClaim
+        metadata:
+          name: web-pvc
+          namespace: "{{ namespace }}"
+          labels:
+            env: production
+        spec:
+          accessModes:
+          - ReadWriteOnce
+          resources:  
+            requests:
+              storage: 1Gi
+
+  - name: Create PVC
+    community.kubernetes.k8s:
+      state: present
+      wait: yes
+      definition:
+        apiVersion: v1
+        kind: PersistentVolumeClaim
+        metadata:
+          name: log-pvc
+          namespace: "{{ namespace }}"
+          labels:
+            env: production
+        spec:
+          accessModes:
+          - ReadWriteOnce
+          resources:  
+            requests:
+              storage: 1Gi
+
+  - name: Create Pods for HTTPD
+    community.kubernetes.k8s:
+      state: present
+      wait: yes
+      definition:
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: httpd-dep
+          namespace: "{{ namespace }}"
+        spec:
+          selector:
+            matchLabels:
+              env: production
+          replicas: 1
+          template:
+            metadata:
+              labels:
+                env: production
+            spec:
+              containers:
+              - name: httpd
+                image: jhagdu/httpd-web:v1
+                ports:
+                - containerPort: 80
+                volumeMounts:
+                  - name: httpd-vol
+                    mountPath: /var/www/html/
+                  - name: logs-vol
+                    mountPath: /var/log/httpd/
+              volumes:
+              - name: httpd-vol
+                persistentVolumeClaim:
+                  claimName: web-pvc
+              - name: logs-vol
+                persistentVolumeClaim:
+                  claimName: log-pvc
+    when: type == "html"
+  
+  - name: Create Pods for PHP
+    community.kubernetes.k8s:
+      state: present
+      wait: yes
+      definition:
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: php-dep
+          namespace: "{{ namespace }}"
+        spec:
+          selector:
+            matchLabels:
+              env: production
+          replicas: 1
+          template:
+            metadata:
+              labels:
+                env: production
+            spec:
+              containers:
+              - name: php
+                image: jhagdu/php-web:v1
+                ports:
+                - containerPort: 80
+                volumeMounts:
+                  - name: httpd-vol
+                    mountPath: /var/www/html/
+                  - name: log-vol
+                    mountPath: /var/log/httpd/
+              volumes:
+              - name: httpd-vol
+                persistentVolumeClaim:
+                  claimName: web-pvc
+              - name: log-vol
+                persistentVolumeClaim:
+                  claimName: log-pvc
+    when: type == "php"
+
+  - name: Get pods
+    shell: kubectl get pods -o jsonpath="{range .items[*]}{.metadata.name}{'\n'}{end}" --namespace {{ namespace }}
+    register: web_pods
+
+  - name: copy website If HTML
+    shell: kubectl cp /var/lib/jenkins/workspace/1\ Git\ Pull/*.html {{ item }}:/var/www/html/ --namespace {{ namespace }}
+    with_items: "{{ web_pods.stdout_lines }}"
+    when: type == "html"
+
+  - name: copy website If PHP
+    shell: kubectl cp /var/lib/jenkins/workspace/1\ Git\ Pull/*.php {{ item }}:/var/www/html/ --namespace {{ namespace }}
+    with_items: "{{ web_pods.stdout_lines }}"
+    when: type == "php"
+
+  - name: Create Service
+    community.kubernetes.k8s:
+      state: present
+      wait: yes
+      definition:
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: web-svc
+          namespace: "{{ namespace }}"
+        spec:
+          type: LoadBalancer
+          selector:
+            env: production
+          ports:
+          - port: 80
+            protocol: TCP
+            name: web-port
+
+  - name: Wait for Some Seconds
+    pause:
+      seconds: "11"
+
+  - name: Get Service Info
+    community.kubernetes.k8s_info:
+      api_version: v1
+      kind: Service
+      name: web-svc
+      namespace: "{{ namespace }}"
+    register: web_svc
+
+  - mail:
+      host: smtp.gmail.com
+      port: 587
+      username: "[[ email ]]"
+      password: "[[ emailPasswd ]]"
+      to: "[[ mail_to ]]"
+      subject: Web Deployment Report
+      body: "{{ type }} Site Deployed Using Ansible Playbook\nNow it is being Tested by Jenkins Job3\n\nSite URL: {{ web_svc.resources.0.status.loadBalancer.ingress.0.hostname }}/webapp.{{ type }}"
+    ignore_errors: yes

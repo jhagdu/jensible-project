@@ -1,0 +1,76 @@
+- name: Add Jenkins YUM Repository
+  yum_repository:
+    async: no
+    baseurl: http://pkg.jenkins.io/redhat
+    description: Repo For Jenkins
+    gpgcheck: no
+    name: Jenkins
+
+- name: Install Some Required Packages
+  package:
+    name: "{{ item }}"
+    state: present
+  with_items:
+    - java-1.8.0
+    - jenkins
+    - python3
+    - unzip
+    - git
+
+- name: Add jenkins user to root group
+  user:
+    name: jenkins
+    group: root
+    append: yes
+
+- name: Updating Jenkins Config File
+  lineinfile:
+    path: /etc/sysconfig/jenkins
+    regexp: 'JENKINS_LISTEN_ADDRESS=""'
+    line: 'JENKINS_LISTEN_ADDRESS="0.0.0.0"'
+
+- name: Start Jenkins Service
+  service:
+    name: jenkins
+    state: started
+    enabled: yes
+
+- name: Wait
+  pause:
+    seconds: "7"
+
+- name: Get Jenkins Initial Admin Pass
+  shell: cat /var/lib/jenkins/secrets/initialAdminPassword
+  register: jenAdminPass
+
+- name: Mail Jenkins URL and Password
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: "{{ email }}"
+    password: "{{ emailPasswd }}"
+    to: "{{ mail_to }}"
+    subject: Jenkins Report
+    body: "Jenkins Configured At -\nhttp://{{ inventory_hostname }}:8080/\n\nInitial Credentials -\nUser: admin\nPassword: {{ jenAdminPass.stdout }}"
+  ignore_errors: yes
+
+- name: Install Required Jenkins Plugins
+  jenkins_plugin:
+    name: "{{ item }}"
+    state: present
+    url_username: admin
+    url_password: "{{ jenAdminPass.stdout }}"
+    url: http://{{ inventory_hostname }}:8080/
+  with_items: "{{ jenkins_plugins }}"
+  register: jen_plugins
+  ignore_errors: yes
+
+- name: Restart Jenkins
+  service:
+    name: jenkins
+    state: restarted
+  when: jen_plugins.changed == true
+
+- name: Wait
+  pause:
+    seconds: "21"

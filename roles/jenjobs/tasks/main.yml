@@ -1,0 +1,148 @@
+- name: Add Kubectl YUM Repository
+  yum_repository:
+    async: no
+    baseurl: https://packages.cloud.google.com/yum/repos/kubernetes-el7-x86_64
+    description: Repo For Kubectl
+    gpgcheck: no
+    name: kubectl
+
+- name: Install Kubectl
+  package:
+    name: kubectl
+    state: present
+
+- name: Download AWSCLIv2
+  get_url:
+    url: https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip
+    dest: /awscliv2.zip
+
+- name: Extract Downloaded AWSCLIv2
+  unarchive:
+    src: /awscliv2.zip
+    remote_src: yes
+    dest: /
+
+- name: Install/Update AWS CLI
+  block:
+    - name: Install AWS CLI
+      shell: bash /aws/install
+  rescue:
+    - name: Update AWS CLI
+      shell: bash /aws/install --update
+  always:
+    - name: Copy AWS CLI Executable to bin
+      shell: cp -rf /usr/local/bin/aws /bin/
+      ignore_errors: yes
+
+- name: Install Required Python Packages
+  pip:
+    name: ['ansible', 'openshift', 'PyYAML']
+
+- name: Check if ansible community.kubernetes collection installed
+  shell: "ls {{ ans_path }}collections/ansible_collections/community/ | grep kubernetes"
+  register: chk_ans_k8s
+  ignore_errors: yes
+
+- name: Error Handling on Install ansible community.kubernetes collection
+  block:
+    - name: Install ansible community.kubernetes collection if not
+      shell: "ansible-galaxy collection install community.kubernetes"
+  rescue:
+    - name: Install ansible community.kubernetes collection if not
+      shell: "/usr/local/bin/ansible-galaxy collection install community.kubernetes"
+      ignore_errors: yes
+  when: chk_ans_k8s.rc != 0
+
+- name: Create Required Directories
+  file: 
+    path: "{{ item }}" 
+    state: directory
+  with_items:
+    - /jenkins_job_files
+    - /jenkins_job_files/seedjob
+    - /jenkins_job_files/ansible
+    - /root/.kube
+    - /root/.aws
+
+- name: Configure Kubectl
+  copy: 
+    src: "kubeconfig"
+    dest: "/root/.kube/config" 
+
+- name: Configure AWS CLI
+  copy: 
+    src: "{{ aws_conf_dir }}{{ item }}"
+    dest: "/root/.aws/{{ item }}"
+  with_items: 
+    - credentials
+    - config
+
+- name: Enable Jenkins to run Sudo
+  lineinfile: 
+    path: /etc/sudoers
+    insertafter: '^root\s+ALL=\(ALL\)\s+ALL'
+    line: 'jenkins ALL=(ALL)   NOPASSWD: ALL'
+
+- name: Upload Jenkins Seed Jobs Definitions
+  copy: 
+    src: "seedjob.xml"
+    dest: "/jenkins_job_files/seedjob/seedjob.xml" 
+
+- name: Upload Ansible Playbook to deploy Infrastructure on K8s
+  template: 
+    src: "deploy-web.yml"
+    dest: "/jenkins_job_files/ansible/deploy-web.yml" 
+    variable_start_string: "[["
+    variable_end_string: "]]"
+
+- name: Get Jenkins Initial Admin Pass
+  shell: cat {{ jenkins_path }}secrets/initialAdminPassword
+  register: jenAdminPasswd
+
+- name: Upload New Seed Job
+  shell: curl -X POST --cookie /tmp/cookies http://{{ inventory_hostname }}:8080/createItem?name=seedjob --data-binary @/jenkins_job_files/seedjob/seedjob.xml -H $(curl --silent --cookie-jar /tmp/cookies http://{{ inventory_hostname }}:8080'/crumbIssuer/api/xml?xpath=concat(//crumbRequestField,":",//crumb)' -u admin:{{ jenAdminPasswd.stdout }}) -H "Content-Type:text/xml" -u admin:{{ jenAdminPasswd.stdout }}
+  register: crteJob
+  ignore_errors: yes
+
+- name: Update Seed Job if already exists
+  shell: curl -X POST --cookie /tmp/cookies http://{{ inventory_hostname }}:8080/job/seedjob/config.xml --data-binary @/jenkins_job_files/seedjob/seedjob.xml -H $(curl --silent --cookie-jar /tmp/cookies http://{{ inventory_hostname }}:8080'/crumbIssuer/api/xml?xpath=concat(//crumbRequestField,":",//crumb)' -u admin:{{ jenAdminPasswd.stdout }}) -H "Content-Type:text/xml" -u admin:{{ jenAdminPasswd.stdout }}
+  register: updJob
+
+- name: Create Seed Job Workspace directory
+  file: 
+    path: "{{ jenkins_path }}{{ item }}"
+    state: directory
+    owner: jenkins
+    group: jenkins
+  with_items:
+    - workspace
+    - workspace/seedjob
+
+- name: Upload Jenkins DSL and Scripts
+  copy: 
+    dest: "{{ jenkins_path }}workspace/seedjob/{{ item }}" 
+    src: "{{ item }}"
+  with_items: 
+    - jobsdsl.groovy
+    - script_4_deploy.sh
+    - testing_script.sh
+
+- name: Update Groovy DSL and Scripts Permission
+  file: 
+    path: "{{ jenkins_path }}workspace/seedjob/{{ item }}" 
+    owner: jenkins 
+    group: jenkins
+  with_items: 
+    - jobsdsl.groovy
+    - script_4_deploy.sh
+    - testing_script.sh
+
+- name: Kick Build of Seed Job
+  shell: curl -X POST --cookie /tmp/cookies http://{{ inventory_hostname }}:8080/job/seedjob/build -H $(curl --silent --cookie-jar /tmp/cookies http://{{ inventory_hostname }}:8080'/crumbIssuer/api/xml?xpath=concat(//crumbRequestField,":",//crumb)' -u admin:{{ jenAdminPasswd.stdout }}) -u admin:{{ jenAdminPasswd.stdout }}
+ 
+- name: Wait for Seed Job to Finish
+  pause:
+    seconds: "30"
+
+- name: Kick builds of Generated Jobs/Pipeline
+  shell: curl -X POST --cookie /tmp/cookies http://{{ inventory_hostname }}:8080/job/1%20Git%20Pull/build -H $(curl --silent --cookie-jar /tmp/cookies http://{{ inventory_hostname }}:8080'/crumbIssuer/api/xml?xpath=concat(//crumbRequestField,":",//crumb)' -u admin:{{ jenAdminPasswd.stdout }}) -u admin:{{ jenAdminPasswd.stdout }}

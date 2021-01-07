@@ -1,0 +1,170 @@
+- name: Create Key-Pair for Jenkins Instance
+  ec2_key:
+    name: "{{ jen_key }}"
+    state: present
+    profile: "{{ aws_profile }}"
+  register: jenkp
+  notify: Save Jenkins Key PEM File
+
+- name: Create Key-Pair for EKS Node Groups
+  ec2_key:
+    name: "{{ ng_key }}"
+    state: present
+    profile: "{{ aws_profile }}"
+  register: ngkp
+  notify: Save NG Key PEM File
+
+- name: Run Handlers
+  meta: flush_handlers
+
+- name: Create a security group for Jenkins Instance
+  ec2_group:
+    name: "{{ jen_sg_name }}"
+    description: Security Group for Jenkins Server
+    state: present
+    rules:
+      - proto: tcp
+        from_port: 22
+        to_port: 22
+        cidr_ip: "{{ pub_ip }}"
+      - proto: tcp
+        from_port: 8080
+        to_port: 8080
+        cidr_ip: "{{ pub_ip }}"
+    rules_egress:
+      - proto: all
+        cidr_ip: 0.0.0.0/0
+    profile: "{{ aws_profile }}"
+
+- name: Create a security group for EKS Node Groups
+  ec2_group:
+    name: "{{ ng_sg_name }}"
+    description: Security Group for EKS Node Groups
+    state: present
+    rules:
+      - proto: tcp
+        from_port: 22
+        to_port: 22
+        cidr_ip: 0.0.0.0/0
+      - proto: tcp
+        from_port: 80
+        to_port: 80
+        cidr_ip: 0.0.0.0/0
+    rules_egress:
+      - proto: all
+        cidr_ip: 0.0.0.0/0
+    profile: "{{ aws_profile }}"
+  register: ngsg
+
+- name: Check If Jenkins Server Already Running
+  ec2_instance_info:
+    filters:
+      "tag:Name": jenkins-server
+    profile: "{{ aws_profile }}"
+  register: chk_jen_inst
+
+- name: Error Handling while Launching Jenkins Server
+  block:
+  - name: Launch Instance for Jenkins if all are Shutdown/Terminated
+    ec2_instance:
+      instance_type: "{{ jen_inst_type }}"
+      image_id: "{{ ami_id }}"
+      key_name: "{{ jen_key }}"
+      security_group: "{{ jen_sg_name }}"
+      state: present
+      tags:
+        Name: jenkins-server
+      vpc_subnet_id: "{{ jen_subnet_id }}"
+      wait: yes
+      profile: "{{ aws_profile }}"
+    register: jenkins_instance
+    when: chk_jen_inst.instances.0.state.code != 16
+  rescue:
+  - name: Launch Instance for Jenkins if there is no instance
+    ec2_instance:
+      instance_type: "{{ jen_inst_type }}"
+      image_id: "{{ ami_id }}"
+      key_name: "{{ jen_key }}"
+      security_group: "{{ jen_sg_name }}"
+      state: present
+      tags:
+        Name: jenkins-server
+      vpc_subnet_id: "{{ jen_subnet_id }}"
+      wait: yes
+      profile: "{{ aws_profile }}"
+    register: jenkins_instance
+  always:
+  - name: Update Group name in Inventory 
+    lineinfile:
+      path: "{{ ans_inv_path }}"
+      line: "[jensible]"
+      
+  - name: Update Group with IP in Inventory
+    lineinfile:
+      path: "{{ ans_inv_path }}"
+      insertafter: '\[jensible]'
+      line: "{{ item.public_ip_address }}\n\n[Older]\n"
+    with_items: "{{ jenkins_instance.instances }}"
+    when: jenkins_instance.changed == true
+
+  - name: Refreshing Inventory After Update
+    meta: refresh_inventory
+
+- name: Create a Role for EKS
+  community.aws.iam_role:
+    name: EKSRole
+    assume_role_policy_document: "{{ lookup('file','eks-policy.json') }}"
+    description: Role For EKS Cluster
+    managed_policies:
+      - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+      - arn:aws:iam::aws:policy/AmazonEKSServicePolicy
+    profile: "{{ aws_profile }}"
+  register: eks_role
+
+- name: Create an EKS cluster
+  community.aws.aws_eks_cluster:
+    name: "{{ eks_cluster_name }}"
+    version: "{{ k8s_version }}"
+    role_arn: "{{ eks_role.arn }}"
+    security_groups: 
+      - "default"
+    subnets:
+      - "{{ eks_subnet1_id }}"
+      - "{{ eks_subnet2_id }}"
+    wait: true
+    profile: "{{ aws_profile }}"
+  register: eks_cluster
+
+- name: Update Kubeconfig and Transfer to JenJobs Role
+  template:
+    src: kubeconfig.j2
+    dest: "{{ jenkins_role_path }}jenjobs/files/kubeconfig"
+
+- name: Create a Role for Node Groups
+  community.aws.iam_role:
+    name: NGRole
+    assume_role_policy_document: "{{ lookup('file','ng-policy.json') }}"
+    description: Role for EKS Node Groups
+    managed_policies:
+      - arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
+      - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
+      - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+    profile: "{{ aws_profile }}"
+  register: ng_role
+
+- name: Check if Node Groups are already there or not
+  shell: "aws eks list-nodegroups --cluster-name {{ eks_cluster_name }} --profile {{ aws_profile }} | grep  web_cluster_ng1"
+  register: chk_ng
+  ignore_errors: yes
+
+- name: Create Node Group if not present
+  shell: "aws eks create-nodegroup --nodegroup-name web_cluster_ng1 --cluster-name {{ eks_cluster_name }} --scaling-config minSize={{ min_size }},maxSize={{ max_size }},desiredSize={{ desired_size }} --subnets {{ eks_subnet1_id }} {{ eks_subnet2_id }} --instance-types {{ ng_inst_type1 }} {{ ng_inst_type2 }}  --remote-access ec2SshKey={{ ng_key }},sourceSecurityGroups={{ ngsg.group_id }} --node-role {{ ng_role.arn }} --profile {{ aws_profile }}"
+  when: chk_ng.rc != 0
+
+- name: Print Message
+  debug:
+    msg: "Complete AWS Infrastructure is Up"
+
+- name: Wait
+  pause:
+    seconds: "70"

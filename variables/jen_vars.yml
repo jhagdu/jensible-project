@@ -1,0 +1,2 @@
+# Path to your AWS CLI Configuration Directory
+aws_conf_dir: "/root/.aws/"

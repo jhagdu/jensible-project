@@ -1,0 +1,20 @@
+- hosts: localhost
+  gather_facts: false
+  vars_files:
+    - variables/aws_vars.yml
+  roles:
+    - aws
+
+- hosts: jensible
+  vars_files:
+    - vault/mail_conf.yml
+  roles:
+    - { role: jenkins, become: yes}
+
+- hosts: jensible
+  vars_files:
+    - variables/jen_vars.yml
+    - vault/mail_conf.yml
+  roles:
+    - { role: jenjobs, become: yes}
+
