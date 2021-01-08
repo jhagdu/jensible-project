@@ -1,31 +1,56 @@
-Role Name
-=========
+JenJobs
+=======
 
-A brief description of the role goes here.
+Role to Configure Seed Job in Jenkins to generate other Jobs/Pipeline and Deploy K8s Infrastructure.
 
 Requirements
 ------------
-
-Any pre-requisites that may not be covered by Ansible itself or the role should be mentioned here. For instance, if the role uses the EC2 module, it may be a good idea to mention in this section that the boto package is required.
+  
+Operating System should be RedHat Linux  
 
 Role Variables
 --------------
 
-A description of the settable variables for this role should go here, including any variables that are in defaults/main.yml, vars/main.yml, and any variables that can/should be set via parameters to the role. Any variables that are read from other roles and/or the global scope (ie. hostvars, group vars, etc.) should be mentioned here as well.
+Variables which should be included in jen_vars.yml variable file -  
 
+    # Path to your AWS CLI Configuration Directory
+    aws_conf_dir: "/root/.aws/"
+
+Variables which should be included in mail_conf.yml vault file -  
+
+    # A mail is sent after Configuring Jenkins Jobs and Website deployment on EKS Cluster
+    # Mail includes the URL of Website which is deployed   
+    email: *******@gmail.com  
+    emailPasswd: ***********
+    mail_to: *******@gmail.com
+
+Variables in vars/main.yml -  
+ 
+    # Path to Jenkins Installation Directory
+    jenkins_path: /var/lib/jenkins/
+    
+    # Path to Ansible Collections and Roles
+    ans_path: /root/.ansible/
+           
 Dependencies
 ------------
 
-A list of other roles hosted on Galaxy should go here, plus any details in regards to parameters that may need to be set for other roles, or variables that are used from other roles.
+Depends on Ansible Roles -
+- jhagdu.aws
+- jhagdu.jenkins
 
 Example Playbook
 ----------------
 
-Including an example of how to use your role (for instance, with variables passed in as parameters) is always nice for users too:
+jen_vars.yml and mail_conf.yml vault/variable files should include all the variables specified above.
 
     - hosts: servers
+      vars_files:
+        - jen_vars.yml
+        - mail_conf.yml
       roles:
-         - { role: username.rolename, x: 42 }
+        - username.jenjobs
+
 
 License
 -------
@@ -35,4 +60,5 @@ BSD
 Author Information
 ------------------
 
-An optional section for the role authors to include contact information, or a website (HTML is not allowed).
+Author Name: Aman Jhagrolia  
+Contact: https://www.linkedin.com/in/amanjhagrolia143  
