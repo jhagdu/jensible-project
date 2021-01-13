@@ -25,7 +25,7 @@ After the successful execution of these roles, Jenkins will be totally configure
 - Ansible Config file should include previliage_escalation block to become root user to configure AWS Instances  
 
 # Links
-Article -  
-Video -  
+Article - https://amanjhagrolia.medium.com/jensible-ansible-jenkins-integration-b52568c632d5 
+Video - https://youtu.be/Nb9Q2eRZnYw   
   
 ***Feel free to Contact for any issue!!*** (Linkedin - www.linkedin.com/in/amanjhagrolia143)  
