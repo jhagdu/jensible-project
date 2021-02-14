@@ -89,7 +89,7 @@
                 persistentVolumeClaim:
                   claimName: log-pvc
     when: type == "html"
-  
+
   - name: Create Pods for PHP
     community.kubernetes.k8s:
       state: present

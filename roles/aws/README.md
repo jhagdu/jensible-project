@@ -97,7 +97,7 @@ aws_vars.yml variable file should include all the variables specified above.
       vars_files:
          - aws_vars.yml
       roles:
-         - username.aws 
+         - jhagdu.aws 
 
 License
 -------

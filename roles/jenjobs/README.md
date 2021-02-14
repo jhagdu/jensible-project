@@ -1,7 +1,7 @@
 JenJobs
 =======
 
-Role to Configure Seed Job in Jenkins to generate other Jobs/Pipeline and Deploy K8s Infrastructure.
+Ansible Role to Configure Seed Job in Jenkins to generate other Jobs/Pipeline and Deploy K8s Infrastructure.
 
 Requirements
 ------------
@@ -49,7 +49,7 @@ jen_vars.yml and mail_conf.yml vault/variable files should include all the varia
         - jen_vars.yml
         - mail_conf.yml
       roles:
-        - username.jenjobs
+        - jhagdu.jenjobs
 
 
 License
